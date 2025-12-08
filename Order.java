@@ -1,19 +1,19 @@
+package projectjava;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-
 public class Order {
-    // Use LinkedHashMap to preserve insertion order and allow easy access to quantities
+
     private final LinkedHashMap<String, Integer> items;
     private int totalAmount;
     private int cash;
     private int change;
-    private String customerName; // optional customer name for GUI/queue
-    private int estimatedPrepTime; // in minutes
-    private int orderId = -1; // optional order id assigned when queued or printed
-
+    private String customerName;
+    private int estimatedPrepTime;
+    private int orderId = -1;
 
     public Order() {
         this.items = new LinkedHashMap<>();
@@ -25,19 +25,19 @@ public class Order {
     }
 
     public void addItem(String item, int qty, int price) {
-        if (qty <= 0) return;
+        if (qty <= 0) {
+            return;
+        }
         int existing = items.getOrDefault(item, 0);
         items.put(item, existing + qty);
         totalAmount += price * qty;
     }
 
-    /**
-     * Remove an item from the order with its associated price.
-     * Call this when user clicks Undo/Cancel to remove an item.
-     */
     public void removeItem(String item, int qty, int price) {
-        if (items.isEmpty()) return;
-        
+        if (items.isEmpty()) {
+            return;
+        }
+
         int currentQty = items.getOrDefault(item, 0);
         if (currentQty >= qty) {
             if (currentQty == qty) {
@@ -46,13 +46,12 @@ public class Order {
                 items.put(item, currentQty - qty);
             }
             totalAmount -= price * qty;
-            if (totalAmount < 0) totalAmount = 0;
+            if (totalAmount < 0) {
+                totalAmount = 0;
+            }
         }
     }
 
-    /**
-     * Return a basic map of ordered items to quantity to simplify usage in client code.
-     */
     public Map<String, Integer> getOrderMap() {
         return new LinkedHashMap<>(items);
     }
@@ -75,7 +74,7 @@ public class Order {
     }
 
     public int getCash() {
-    
+
         return cash;
     }
 
@@ -112,7 +111,11 @@ public class Order {
         return estimatedPrepTime;
     }
 
-    public void setOrderId(int id) { this.orderId = id; }
+    public void setOrderId(int id) {
+        this.orderId = id;
+    }
 
-    public int getOrderId() { return orderId; }
+    public int getOrderId() {
+        return orderId;
+    }
 }

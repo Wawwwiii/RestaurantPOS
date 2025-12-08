@@ -1,3 +1,5 @@
+package projectjava;
+
 public class Menu {
     private final String name;
     private final int price;

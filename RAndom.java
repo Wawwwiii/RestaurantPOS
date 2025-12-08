@@ -1,3 +1,5 @@
+package projectjava;
+
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.print.*;
@@ -9,12 +11,15 @@ import java.util.List;
 import javax.sound.sampled.*;
 import javax.swing.*;
 import javax.swing.event.DocumentListener;
+import javax.swing.event.DocumentEvent;
 import javax.swing.table.*;
 import javafx.application.Platform;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 
+
 public final class RAndom extends JFrame {
+
     private static final Color MENU_BG = Color.decode("#7ef59bff");
     private static final Color RECEIPT_BG = Color.decode("#6fa187ff");
     private static final Font MENU_FONT = new Font("Roboto", Font.BOLD, 20);
@@ -31,19 +36,30 @@ public final class RAndom extends JFrame {
     private JScrollPane receiptScroll;
     private JTable orderTable;
     private DefaultTableModel orderTableModel;
-    private JTextField searchField;
     private JTabbedPane menuTabbedPane;
     private static int orderCounter;
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private boolean beepEnabled = true;
     private boolean darkMode = false;
     private Clip backgroundMusicClip;
+    private MediaPlayer backgroundMediaPlayer;
     private Map<String, String> customers = new HashMap<>();
-    private Timer backupTimer;
+    private javax.swing.Timer backupTimer;
     private double totalSales = 0.0;
+    private static final String DAILY_SALES_FILE_PREFIX = "daily_sales_";
+
+    private static java.util.LinkedList<User> accounts = new java.util.LinkedList<>();
+    private static java.util.Scanner loginScanner = new java.util.Scanner(System.in);
+    private static final String ACCOUNTS_FILE = "accounts.txt";
 
     public RAndom() {
         this.loadOrderCounter();
+        this.loadDailySales();
+        Login.loadAccounts();
+        if (!loginCashier()) {
+            JOptionPane.showMessageDialog(this, "Login cancelled. Exiting.", "Exit", JOptionPane.INFORMATION_MESSAGE);
+            System.exit(0);
+        }
         this.initGUI();
         this.startBackupTimer();
         this.playBackgroundMusic();
@@ -51,17 +67,87 @@ public final class RAndom extends JFrame {
     }
 
     private boolean loginCashier() {
-        String username = JOptionPane.showInputDialog(null, "Enter Cashier Username:", "Cashier Login", JOptionPane.QUESTION_MESSAGE);
-        if (username != null && !username.trim().isEmpty()) {
-            String password = JOptionPane.showInputDialog(null, "Enter Password:", "Cashier Login", JOptionPane.QUESTION_MESSAGE);
-            if (password != null && password.equals("admin")) {
-                return true;
+        Login.loadAccounts();
+
+        while (true) {
+            String[] options = {"Login", "Register", "Cancel"};
+            int action = JOptionPane.showOptionDialog(this, "Choose action", "Cashier Authentication",
+                    JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, options, options[0]);
+
+            if (action == 0) {
+                JPanel panel = new JPanel(new GridLayout(2, 2));
+                JTextField userField = new JTextField();
+                JPasswordField passField = new JPasswordField();
+                panel.add(new JLabel("Username:"));
+                panel.add(userField);
+                panel.add(new JLabel("Password:"));
+                panel.add(passField);
+
+                int res = JOptionPane.showConfirmDialog(this, panel, "Login", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+                if (res != JOptionPane.OK_OPTION) {
+                    return false;
+                }
+
+                String username = userField.getText();
+                String password = new String(passField.getPassword());
+
+                boolean loggedIn = false;
+                for (User u : accounts) {
+                    if (u.username.equals(username) && u.password.equals(password)) {
+                        loggedIn = true;
+                        break;
+                    }
+                }
+
+                if (loggedIn) {
+                    JOptionPane.showMessageDialog(this, "Login successful!");
+                    return true;
+                } else {
+                    JOptionPane.showMessageDialog(this, "Invalid username or password.", "Error", JOptionPane.ERROR_MESSAGE);
+                    continue;
+                }
+
+            } else if (action == 1) {
+                JPanel panel = new JPanel(new GridLayout(2, 2));
+                JTextField userField = new JTextField();
+                JPasswordField passField = new JPasswordField();
+                panel.add(new JLabel("New username:"));
+                panel.add(userField);
+                panel.add(new JLabel("New password:"));
+                panel.add(passField);
+
+                int res = JOptionPane.showConfirmDialog(this, panel, "Register", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+                if (res != JOptionPane.OK_OPTION) {
+                    continue;
+                }
+
+                String newUsername = userField.getText().trim();
+                String newPassword = new String(passField.getPassword());
+                if (newUsername.isEmpty() || newPassword.isEmpty()) {
+                    JOptionPane.showMessageDialog(this, "Username and password cannot be empty.", "Error", JOptionPane.ERROR_MESSAGE);
+                    continue;
+                }
+
+                boolean exists = false;
+                for (User u : accounts) {
+                    if (u.username.equals(newUsername)) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (exists) {
+                    JOptionPane.showMessageDialog(this, "Username already exists.", "Error", JOptionPane.ERROR_MESSAGE);
+                    continue;
+                }
+
+                accounts.add(new User(newUsername, newPassword));
+                Login.saveAccounts();
+                JOptionPane.showMessageDialog(this, "Registration successful!");
+                continue;
+
             } else {
-                JOptionPane.showMessageDialog(null, "Invalid login.", "Error", JOptionPane.ERROR_MESSAGE);
                 return false;
             }
-        } else {
-            return false;
         }
     }
 
@@ -82,8 +168,35 @@ public final class RAndom extends JFrame {
         }
     }
 
+    private String getDailySalesFilename() {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        return DAILY_SALES_FILE_PREFIX + today + ".txt";
+    }
+
+    private void loadDailySales() {
+        String filename = getDailySalesFilename();
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line = br.readLine();
+            totalSales = (line != null && !line.trim().isEmpty()) ? Double.parseDouble(line.trim()) : 0.0;
+            logError("Loaded today's sales: ₱" + String.format("%.2f", totalSales));
+        } catch (IOException | NumberFormatException e) {
+            totalSales = 0.0;
+            logError("No previous sales today, starting fresh: " + e.getMessage());
+        }
+    }
+
+    private void saveDailySales() {
+        String filename = getDailySalesFilename();
+        try (PrintWriter out = new PrintWriter(new FileWriter(filename))) {
+            out.println(totalSales);
+            logError("Saved today's sales: ₱" + String.format("%.2f", totalSales) + " to " + filename);
+        } catch (IOException e) {
+            logError("Error saving daily sales: " + e.getMessage());
+        }
+    }
+
     private void startBackupTimer() {
-        backupTimer = new Timer(600000, e -> backupData());
+        backupTimer = new javax.swing.Timer(600000, e -> backupData());
         backupTimer.start();
     }
 
@@ -96,7 +209,7 @@ public final class RAndom extends JFrame {
     }
 
     private void initGUI() {
-        setTitle("Turo Turo ni Eliza - Advanced Edition");
+        setTitle("Gustopia - Ultimatepromax Edition");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setExtendedState(JFrame.MAXIMIZED_BOTH);
         setLayout(new BorderLayout());
@@ -107,21 +220,92 @@ public final class RAndom extends JFrame {
         pack();
     }
 
+    static class User {
+
+        String username;
+        String password;
+
+        User(String username, String password) {
+            this.username = username;
+            this.password = password;
+        }
+    }
+
+    public static class Login {
+
+        public static void loadAccounts() {
+            java.io.File file = new java.io.File(ACCOUNTS_FILE);
+            if (!file.exists()) {
+                return;
+            }
+
+            try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(file))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String[] parts = line.split(",", 2);
+                    if (parts.length == 2) {
+                        accounts.add(new User(parts[0], parts[1]));
+                    }
+                }
+            } catch (java.io.IOException e) {
+                System.out.println("Cannot load the account: " + e.getMessage());
+            }
+        }
+
+        public static void saveAccounts() {
+            try (java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(ACCOUNTS_FILE))) {
+                for (User user : accounts) {
+                    pw.println(user.username + "," + user.password);
+                }
+            } catch (java.io.IOException e) {
+                System.out.println("Error saving accounts: " + e.getMessage());
+            }
+        }
+
+        public static void register() {
+            System.out.print("Create username: ");
+            String newUsername = loginScanner.nextLine();
+
+            for (User user : accounts) {
+                if (user.username.equals(newUsername)) {
+                    System.out.println("Username already exists! Try again.");
+                    return;
+                }
+            }
+
+            System.out.print("Create password: ");
+            String newPassword = loginScanner.nextLine();
+
+            accounts.add(new User(newUsername, newPassword));
+            System.out.println("Registration successful!");
+        }
+
+        public static void logon() {
+            System.out.print("Enter username: ");
+            String username = loginScanner.nextLine();
+            System.out.print("Enter password: ");
+            String password = loginScanner.nextLine();
+
+            boolean loggedIn = false;
+            for (User user : accounts) {
+                if (user.username.equals(username) && user.password.equals(password)) {
+                    loggedIn = true;
+                    break;
+                }
+            }
+
+            if (loggedIn) {
+                System.out.println("Login successful!");
+            } else {
+                System.out.println("Invalid username or password.");
+            }
+        }
+    }
+
     private JPanel createMenuPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(MENU_BG);
         panel.setPreferredSize(new Dimension(450, 600));
-        searchField = new JTextField();
-        searchField.setFont(BUTTON_FONT);
-        searchField.getDocument().addDocumentListener(new DocumentListener() {
-            public void changedUpdate(DocumentEvent e) { filterMenu(); }
-            public void removeUpdate(DocumentEvent e) { filterMenu(); }
-            public void insertUpdate(DocumentEvent e) { filterMenu(); }
-        });
-        JPanel searchPanel = new JPanel(new BorderLayout());
-        searchPanel.add(new JLabel("🔍 Search:"), BorderLayout.WEST);
-        searchPanel.add(searchField, BorderLayout.CENTER);
-        panel.add(searchPanel, BorderLayout.NORTH);
         menuTabbedPane = new JTabbedPane();
         for (Category category : categories) {
             JPanel tabPanel = new JPanel(new GridLayout(0, 2, 15, 15));
@@ -145,22 +329,6 @@ public final class RAndom extends JFrame {
         button.addActionListener(e -> addItemToOrder(item));
         button.setToolTipText("Click to add " + item.getName() + " to order");
         return button;
-    }
-
-    private void filterMenu() {
-        String query = searchField.getText().toLowerCase();
-        for (int i = 0; i < menuTabbedPane.getTabCount(); i++) {
-            JPanel tabPanel = (JPanel) menuTabbedPane.getComponentAt(i);
-            Component[] components = tabPanel.getComponents();
-            for (Component comp : components) {
-                if (comp instanceof JButton btn) {
-                    String text = btn.getText().toLowerCase();
-                    btn.setVisible(text.contains(query));
-                }
-            }
-            tabPanel.revalidate();
-            tabPanel.repaint();
-        }
     }
 
     private JPanel createOrderPanel() {
@@ -226,16 +394,11 @@ public final class RAndom extends JFrame {
         receiptScroll = new JScrollPane(receiptArea);
         receiptPanel.add(receiptScroll, BorderLayout.CENTER);
         JPanel receiptButtonPanel = new JPanel();
-        JButton saveBtn = new JButton("Save Receipt");
-        saveBtn.setFont(BUTTON_FONT);
-        saveBtn.setPreferredSize(new Dimension(150, 50));
-        saveBtn.addActionListener(e -> saveReceiptToFile());
-        JButton shareBtn = new JButton("Share Receipt");
-        shareBtn.setFont(BUTTON_FONT);
-        shareBtn.setPreferredSize(new Dimension(150, 50));
-        shareBtn.addActionListener(e -> shareReceipt());
-        receiptButtonPanel.add(saveBtn);
-        receiptButtonPanel.add(shareBtn);
+        JButton logoutBtn = new JButton("Logout");
+        logoutBtn.setFont(BUTTON_FONT);
+        logoutBtn.setPreferredSize(new Dimension(150, 50));
+        logoutBtn.addActionListener(e -> handleLogout());
+        receiptButtonPanel.add(logoutBtn);
         receiptPanel.add(receiptButtonPanel, BorderLayout.SOUTH);
         panel.add(receiptPanel, BorderLayout.CENTER);
         return panel;
@@ -310,7 +473,9 @@ public final class RAndom extends JFrame {
         }
         String[] options = {"Cash", "Card"};
         int paymentType = JOptionPane.showOptionDialog(this, "Select payment method:", "Payment", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
-        if (paymentType == JOptionPane.CLOSED_OPTION) return false;
+        if (paymentType == JOptionPane.CLOSED_OPTION) {
+            return false;
+        }
         if (paymentType == 0) {
             int totalAmount = currentOrder.getTotalAmount();
             int totalPaid = 0;
@@ -338,7 +503,10 @@ public final class RAndom extends JFrame {
             showInfo("Card payment processed.");
         }
         totalSales += currentOrder.getTotalAmount();
-        if (beepEnabled) playPaymentSound();
+        saveDailySales();
+        if (beepEnabled) {
+            playPaymentSound();
+        }
         int id = orderCounter++;
         currentOrder.setOrderId(id);
         orderQueue.enqueue(currentOrder, "Order #" + id + " - ₱" + currentOrder.getTotalAmount());
@@ -360,7 +528,7 @@ public final class RAndom extends JFrame {
         int orderNumber = currentOrder.getOrderId() > 0 ? currentOrder.getOrderId() : orderCounter++;
         StringBuilder receipt = new StringBuilder();
         receipt.append("==========================================\n");
-        receipt.append("          TURO TURO NI ELIZA\n");
+        receipt.append("          Gustopia\n");
         receipt.append("          123 Main Street, City\n");
         receipt.append("          Tel: (123) 456-7890\n");
         receipt.append("==========================================\n");
@@ -386,10 +554,11 @@ public final class RAndom extends JFrame {
         receipt.append(String.format("Change: %29d%n", currentOrder.getCash() - currentOrder.getTotalAmount()));
         receipt.append("==========================================\n");
         receipt.append("Thank you for dining with us!\n");
-        receipt.append("QR Code: [Simulated Digital Receipt]\n");
         receipt.append("==========================================\n");
         receiptArea.setText(receipt.toString());
-        if (beepEnabled) playReceiptSound();
+        if (beepEnabled) {
+            playReceiptSound();
+        }
         flashReceipt();
         try (PrintWriter out = new PrintWriter(new FileWriter("orders.txt", true))) {
             out.println("Order #" + orderNumber + " - " + LocalDateTime.now().format(formatter));
@@ -459,6 +628,33 @@ public final class RAndom extends JFrame {
         dialog.setVisible(true);
     }
 
+    private void handleLogout() {
+        String message = "Total Sales Today: ₱" + String.format("%.2f", totalSales) + "\n\n";
+        message += "Session Summary:\n";
+        message += "- Orders processed: " + orderCounter + "\n";
+        message += "- Thank you for your service!";
+
+        JOptionPane.showMessageDialog(this, message, "Daily Summary", JOptionPane.INFORMATION_MESSAGE);
+
+        if (backgroundMediaPlayer != null) {
+            Platform.runLater(() -> {
+                try {
+                    backgroundMediaPlayer.stop();
+                    backgroundMediaPlayer.dispose();
+                    backgroundMediaPlayer = null;
+                    logError("Background music stopped on logout");
+                } catch (Exception ex) {
+                    logError("Error stopping background music: " + ex.getMessage());
+                }
+            });
+        }
+
+        this.dispose();
+        SwingUtilities.invokeLater(() -> {
+            JFrame newFrame = new RAndom();
+        });
+    }
+
     private void changeFontSize() {
         String sizeStr = JOptionPane.showInputDialog(this, "Enter font size (10-36):", "Font Size", JOptionPane.QUESTION_MESSAGE);
         if (sizeStr != null) {
@@ -491,19 +687,33 @@ public final class RAndom extends JFrame {
     }
 
     private void playBackgroundMusic() {
-        Platform.runLater(() -> {
-            try {
-                File soundFile = new File("src/background music.mp3");
-                if (soundFile.exists()) {
-                    Media media = new Media(soundFile.toURI().toString());
-                    MediaPlayer mediaPlayer = new MediaPlayer(media);
-                    mediaPlayer.setCycleCount(MediaPlayer.INDEFINITE);
-                    mediaPlayer.play();
+        System.out.println("playBackgroundMusic called");
+        logError("playBackgroundMusic called");
+        try {
+            Platform.runLater(() -> {
+                System.out.println("Inside Platform.runLater for background music");
+                logError("Inside Platform.runLater for background music");
+                try {
+                    File soundFile = new File("src/background music.mp3");
+                    System.out.println("Background file exists: " + soundFile.exists() + " -> " + soundFile.getAbsolutePath());
+                    if (soundFile.exists()) {
+                        Media media = new Media(soundFile.toURI().toString());
+                        media.setOnError(() -> logError("Media load error: " + media.getError()));
+                        backgroundMediaPlayer = new MediaPlayer(media);
+                        backgroundMediaPlayer.setOnError(() -> logError("MediaPlayer error: " + backgroundMediaPlayer.getError()));
+                        backgroundMediaPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+                        backgroundMediaPlayer.play();
+                        logError("Background music started: " + soundFile.getAbsolutePath());
+                    } else {
+                        logError("Background music not found: " + soundFile.getAbsolutePath());
+                    }
+                } catch (Exception ex) {
+                    logError("Background music failed: " + ex.getMessage());
                 }
-            } catch (Exception ex) {
-                // Silent fail
-            }
-        });
+            });
+        } catch (Throwable t) {
+            logError("JavaFX Platform not initialized for background music: " + t.getMessage());
+        }
     }
 
     private void playPaymentSound() {
@@ -543,7 +753,7 @@ public final class RAndom extends JFrame {
     private void flashReceipt() {
         Color old = receiptArea.getBackground();
         receiptArea.setBackground(Color.WHITE);
-        Timer timer = new Timer(800, e -> receiptArea.setBackground(old));
+        javax.swing.Timer timer = new javax.swing.Timer(800, e -> receiptArea.setBackground(old));
         timer.setRepeats(false);
         timer.start();
     }
@@ -571,13 +781,12 @@ public final class RAndom extends JFrame {
     private void logError(String msg) {
         try (PrintWriter out = new PrintWriter(new FileWriter("error_log.txt", true))) {
             out.println(LocalDateTime.now().format(formatter) + ": " + msg);
-        } catch (IOException e) {
-            // Silent fail
+        } catch (Exception e) {
         }
     }
 
-    // Custom Button Renderer and Editor for Table
     class ButtonRenderer extends JButton implements TableCellRenderer {
+
         public ButtonRenderer() {
             setOpaque(true);
         }
@@ -590,6 +799,7 @@ public final class RAndom extends JFrame {
     }
 
     class ButtonEditor extends DefaultCellEditor {
+
         private JButton button;
         private String label;
         private boolean isPushed;
@@ -621,7 +831,6 @@ public final class RAndom extends JFrame {
         @Override
         public Object getCellEditorValue() {
             if (isPushed) {
-                // Handle button click
             }
             isPushed = false;
             return label;
@@ -640,70 +849,10 @@ public final class RAndom extends JFrame {
     }
 
     public static void main(String[] args) {
+        try {
+            new javafx.embed.swing.JFXPanel();
+        } catch (Exception e) {
+        }
         SwingUtilities.invokeLater(RAndom::new);
-    }
-}
-
-// Supporting Classes (add these at the end of the file)
-class Category {
-    private String name;
-    private List<Menu> items = new ArrayList<>();
-    public Category(String name) { this.name = name; }
-    public String getName() { return name; }
-    public List<Menu> getItems() { return items; }
-    public void addItem(Menu item) { items.add(item); }
-}
-
-class Menu {
-    private String name;
-    private int price;
-    public Menu(String name, int price) { this.name = name; this.price = price; }
-    public String getName() { return name; }
-    public int getPrice() { return price; }
-    public String toString() { return name + " - $" + price; }
-}
-
-class Order {
-    private List<String> orderItems = new ArrayList<>();
-    private int totalAmount = 0;
-    private int cash = 0;
-    private int orderId = 0;
-    public void addItem(String name, int qty, int price) {
-        orderItems.add(qty + "|" + name);
-        totalAmount += qty * price;
-    }
-    public void removeItem(String name, int qty, int price) {
-        orderItems.remove(qty + "|" + name);
-        totalAmount -= qty * price;
-    }
-    public List<String> getOrderItems() { return orderItems; }
-    public int getTotalAmount() { return totalAmount; }
-    public void setCash(int cash) { this.cash = cash; }
-    public int getCash() { return cash; }
-    public int getChange() { return cash - totalAmount; }
-    public int getOrderId() { return orderId; }
-    public void setOrderId(int id) { this.orderId = id; }
-}
-
-class OrderQueue {
-    private java.util.Queue<Order> queue = new java.util.LinkedList<>();
-    private DefaultListModel<String> listModel = new DefaultListModel<>();
-    public void enqueue(Order order, String label) { queue.add(order); listModel.addElement(label); }
-    public Order dequeue() { Order o = queue.poll(); if (o != null) listModel.remove(0); return o; }
-    public boolean isEmpty() { return queue.isEmpty(); }
-    public DefaultListModel<String> getListModel() { return listModel; }
-    public Order getOrderAt(int index) { return (Order) queue.toArray()[index]; }
-    public boolean promoteToFront(int index) { if (index > 0) { Order o = (Order) queue.toArray()[index]; queue.remove(o); queue.add(o); listModel.remove(index); listModel.add(0, listModel.get(index)); return true; } return false; }
-}
-
-class MenuInitializer {
-    public static List<Category> initializeMenu() {
-        List<Category> categories = new ArrayList<>();
-        Category mains = new Category("Mains");
-        mains.addItem(new Menu("Adobo", 100));
-        mains.addItem(new Menu("Sinigang", 120));
-        categories.add(mains);
-        // Add more categories/items as needed
-        return categories;
     }
 }
