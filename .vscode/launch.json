@@ -1,0 +1,51 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "RestaurantPOS_cb2d00f6/RAndom",
+            "request": "launch",
+            "mainClass": "RestaurantPOS_cb2d00f6/RAndom",
+            "projectName": "RestaurantPOS_cb2d00f6"
+        },
+        {
+            "type": "java",
+            "name": "RestaurantPOS/RAndom",
+            "request": "launch",
+            "mainClass": "RestaurantPOS/RAndom",
+            "projectName": "RestaurantPOS_cb2d00f6"
+        },
+        {
+            "type": "java",
+            "name": "App",
+            "request": "launch",
+            "mainClass": "App",
+            "projectName": "RestaurantPOS_cb2d00f6"
+        },
+        {
+            "type": "java",
+            "name": "RAndom",
+            "request": "launch",
+            "mainClass": "RestaurantPOS.RAndom",
+            "projectName": "RestaurantPOS_cb2d00f6",
+            "java.home": "C:\\Program Files\\Java\\jdk-25",
+            "vmArgs": "--module-path \"C:\\Users\\Client\\Documents\\JavaFx\\lib\" --add-modules javafx.controls,javafx.media --enable-native-access=javafx.graphics"
+        },
+        {
+            "type": "java",
+            "name": "Launch Java Program",
+            "request": "launch",
+            "mainClass": ""
+        },
+        {
+            "type": "java",
+            "name": "Current File",
+            "request": "launch",
+            "mainClass": "${file}",
+            "vmArgs": "--module-path \"C:\\Users\\Client\\Documents\\JavaFx\\lib\" --add-modules javafx.controls,javafx.fxml --enable-native-access=javafx.graphics"
+        }
+    ]
+}
